@@ -110,6 +110,18 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
+  - id: flag_heatpump_aan
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: flag_heatpump_uit
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: flag_force_heatpump_on
+    type: bool
+    restore_value: false
+    initial_value: 'false'
 
 text_sensor:
   - platform: homeassistant
@@ -124,49 +136,14 @@ text_sensor:
     attribute: preset_mode
     internal: false
 
-select:
-  - platform: template
-    id: local_heatpump_mode
-    name: "Heat Pump Mode"
-    options:
-      - "heat_cool"
-      - "heat"
-      - "cool"
-      - "off"
-    initial_option: "off"
-    icon: mdi:thermostat
-    set_action:
-      - homeassistant.service:
-          service: climate.set_hvac_mode
-          data:
-            entity_id: climate.w_eau_pool_heatpump
-            hvac_mode: !lambda 'return x;'
-
-  - platform: template
-    id: local_heatpump_preset
-    name: "Heat Pump Preset"
-    options:
-      - "quick_heat"
-      - "quiet_heat"
-      - "quiet_cool"
-      - "auto"
-    initial_option: "quick_heat"
-    icon: mdi:thermostat
-    set_action:
-      - homeassistant.service:
-          service: climate.set_preset_mode
-          data:
-            entity_id: climate.w_eau_pool_heatpump
-            preset_mode: !lambda 'return x;'
-
 number:
   - platform: template
-    name: "Heat Pump Target Temp"
+    name: "Doeltemperatuur"
     id: local_heatpump_target_temp
-    min_value: 20
-    max_value: 35
+    min_value: 8
+    max_value: 40
     step: 1
-    initial_value: 28
+    initial_value: 27
     optimistic: true
     on_value:
       then:
@@ -186,16 +163,6 @@ interval:
             if (abs(id(local_heatpump_target_temp).state - id(ha_heatpump_target_temp).state) > 0.1) {
               id(local_heatpump_target_temp).publish_state(id(ha_heatpump_target_temp).state);
             }
-          }
-      - lambda: |-
-          if (!id(heatpump_mode_status).state.empty() &&
-              id(local_heatpump_mode).current_option() != id(heatpump_mode_status).state) {
-            id(local_heatpump_mode).publish_state(id(heatpump_mode_status).state);
-          }
-      - lambda: |-
-          if (!id(heatpump_preset_status).state.empty() &&
-              id(local_heatpump_preset).current_option() != id(heatpump_preset_status).state) {
-            id(local_heatpump_preset).publish_state(id(heatpump_preset_status).state);
           }
       - if:
           condition:
@@ -247,6 +214,46 @@ interval:
                   title: "⚠️ Warmtepomp FOUT!"
                   message: !lambda 'return id(notify_msg);'
             - lambda: 'id(notify_push) = false;'
+      - if:
+          condition:
+            lambda: 'return id(flag_heatpump_aan);'
+          then:
+            - homeassistant.service:
+                service: climate.set_hvac_mode
+                data:
+                  entity_id: climate.w_eau_pool_heatpump
+                  hvac_mode: heat_cool
+            - homeassistant.service:
+                service: climate.set_preset_mode
+                data:
+                  entity_id: climate.w_eau_pool_heatpump
+                  preset_mode: auto
+            - lambda: 'id(flag_heatpump_aan) = false;'
+      - if:
+          condition:
+            lambda: 'return id(flag_heatpump_uit);'
+          then:
+            - homeassistant.service:
+                service: climate.set_hvac_mode
+                data:
+                  entity_id: climate.w_eau_pool_heatpump
+                  hvac_mode: "off"
+            - lambda: 'id(flag_heatpump_uit) = false;'
+      - if:
+          condition:
+            lambda: 'return id(flag_force_heatpump_on);'
+          then:
+            - homeassistant.service:
+                service: climate.set_hvac_mode
+                data:
+                  entity_id: climate.w_eau_pool_heatpump
+                  hvac_mode: heat_cool
+            - homeassistant.service:
+                service: climate.set_preset_mode
+                data:
+                  entity_id: climate.w_eau_pool_heatpump
+                  preset_mode: auto
+            - lambda: 'id(flag_force_heatpump_on) = false;'
 
   - interval: 60s
     then:
@@ -275,20 +282,16 @@ interval:
 
           // --- FORCED HEATING OVERRIDE ---
           if (id(sw_forced_heating).state) {
-            if (id(heatpump_mode_status).state != "heat") {
-              ESP_LOGI("heatpump_auto", "Forced heating actief → warmtepomp AAN");
-              id(local_heatpump_mode).make_call().set_option("heat").perform();
-              id(local_heatpump_preset).make_call().set_option("quick_heat").perform();
-            }
+            ESP_LOGI("heatpump_auto", "Forced heating actief → warmtepomp AAN");
+            id(flag_force_heatpump_on) = true;
             return;
           }
 
           // --- SENSOR VALIDATIE ---
-          if (isnan(id(battery_soc).state)  ||
-              isnan(id(grid_export).state)   ||
-              isnan(id(grid_import).state)   ||
-              isnan(id(pv_power).state)      ||
-              isnan(id(rtd_ezo_pool).state)) {
+          if (isnan(id(battery_soc).state) ||
+              isnan(id(grid_export).state)  ||
+              isnan(id(grid_import).state)  ||
+              isnan(id(pv_power).state)) {
             ESP_LOGW("heatpump_auto", "Sensordata niet beschikbaar, geen actie");
             return;
           }
@@ -297,71 +300,46 @@ interval:
           float export_ = id(grid_export).state;   // kW
           float import_ = id(grid_import).state;   // kW
           float pv      = id(pv_power).state;      // W
-          float pool    = id(rtd_ezo_pool).state;
-          float target  = id(local_heatpump_target_temp).state;
           uint32_t now  = millis() / 1000;
 
           // --- CONDITIES (export/import in kW, pv in W) ---
           bool voldoende_overschot = (export_ > 1.5 && import_ < 0.1 && pv > 200.0);
           bool batterij_vol        = (soc > 80.0 && pv > 500.0);
           bool heeft_energie       = voldoende_overschot || batterij_vol;
-          bool pool_te_koud        = (pool < target - 0.5);
-          bool pool_te_warm        = (pool > target + 0.5);
-          bool pool_op_temp        = (pool >= target - 0.5 && pool <= target + 0.5);
 
           bool min_runtime_ok = (id(heatpump_on_since) == 0 ||
                                  (now - id(heatpump_on_since)) > 1800);
 
-          // --- VERWARMEN ---
-          if (heeft_energie && pool_te_koud && !id(heatpump_auto_on)) {
-            ESP_LOGI("heatpump_auto", "Warmtepomp VERWARMEN → export:%.2fkW soc:%.0f%% pool:%.1f°C target:%.0f°C",
-                     export_, soc, pool, target);
-            id(local_heatpump_mode).make_call().set_option("heat").perform();
-            id(local_heatpump_preset).make_call().set_option("quick_heat").perform();
+          // --- AANZETTEN (energie beschikbaar, warmtepomp nog niet aan) ---
+          if (heeft_energie && !id(heatpump_auto_on)) {
+            ESP_LOGI("heatpump_auto", "Warmtepomp AAN → export:%.2fkW soc:%.0f%% target:%.0f°C",
+                     export_, soc, id(local_heatpump_target_temp).state);
             id(heatpump_on_since) = now;
             id(heatpump_auto_on)  = true;
-            id(prev_heatpump_mode) = std::string("heat");
+            id(prev_heatpump_mode) = std::string("heat_cool");
+            id(flag_heatpump_aan) = true;
             char msg[128];
             snprintf(msg, sizeof(msg),
-              "Verwarmen: export:%.2fkW soc:%.0f%% pool:%.1f°C target:%.0f°C",
-              export_, soc, pool, target);
+              "AAN: export:%.2fkW soc:%.0f%% target:%.0f°C",
+              export_, soc, id(local_heatpump_target_temp).state);
             id(notify_msg) = std::string(msg);
             id(notify_aan) = true;
           }
 
-          // --- KOELEN ---
-          else if (heeft_energie && pool_te_warm && !id(heatpump_auto_on)) {
-            ESP_LOGI("heatpump_auto", "Warmtepomp KOELEN → export:%.2fkW soc:%.0f%% pool:%.1f°C target:%.0f°C",
-                     export_, soc, pool, target);
-            id(local_heatpump_mode).make_call().set_option("cool").perform();
-            id(local_heatpump_preset).make_call().set_option("quiet_cool").perform();
-            id(heatpump_on_since) = now;
-            id(heatpump_auto_on)  = true;
-            id(prev_heatpump_mode) = std::string("cool");
+          // --- UITSCHAKELEN (geen energie meer, min runtime ok) ---
+          else if (id(heatpump_auto_on) && !heeft_energie && min_runtime_ok) {
+            ESP_LOGI("heatpump_auto", "Warmtepomp UIT → export:%.2fkW soc:%.0f%%",
+                     export_, soc);
+            id(heatpump_on_since) = 0;
+            id(heatpump_auto_on)  = false;
+            id(prev_heatpump_mode) = std::string("off");
+            id(flag_heatpump_uit) = true;
             char msg[128];
             snprintf(msg, sizeof(msg),
-              "Koelen: export:%.2fkW soc:%.0f%% pool:%.1f°C target:%.0f°C",
-              export_, soc, pool, target);
+              "UIT: export:%.2fkW soc:%.0f%%",
+              export_, soc);
             id(notify_msg) = std::string(msg);
-            id(notify_aan) = true;
-          }
-
-          // --- UITSCHAKELEN ---
-          else if (id(heatpump_auto_on) && min_runtime_ok) {
-            if (!heeft_energie || pool_op_temp) {
-              ESP_LOGI("heatpump_auto", "Warmtepomp UIT → export:%.2fkW soc:%.0f%% pool:%.1f°C",
-                       export_, soc, pool);
-              id(local_heatpump_mode).make_call().set_option("off").perform();
-              id(heatpump_on_since) = 0;
-              id(heatpump_auto_on)  = false;
-              id(prev_heatpump_mode) = std::string("off");
-              char msg[128];
-              snprintf(msg, sizeof(msg),
-                "UIT: export:%.2fkW soc:%.0f%% pool:%.1f°C",
-                export_, soc, pool);
-              id(notify_msg) = std::string(msg);
-              id(notify_uit) = true;
-            }
+            id(notify_uit) = true;
           }
 
   - interval: 60s
@@ -385,7 +363,7 @@ interval:
           if (soc_delta >= 3.0 && pv < 200.0) {
             ESP_LOGW("battery_pump", "Batterij ontlaadt zonder PV (%.0f%% → %.0f%%) → warmtepomp UIT",
                      id(prev_soc), soc);
-            id(local_heatpump_mode).make_call().set_option("off").perform();
+            id(flag_heatpump_uit) = true;
             id(heatpump_auto_on) = false;
             id(heatpump_on_since) = 0;
             // Pomp naar low in auto mode (tenzij al off of low, of flow emergency)
@@ -419,17 +397,15 @@ interval:
 
           std::string speed = id(pump_speed).current_option();
 
-          // ONTLADEN: SOC daalt >= 3% → pomp naar low
-          if (soc_delta >= 3.0 && speed != "off" && speed != "low") {
-            ESP_LOGI("battery_pump", "Batterij ontlaadt (%.0f%% → %.0f%%) → pomp naar low",
-                     id(prev_soc), soc);
+          // ONTLADEN: SOC < 80% en geen PV → pomp naar low
+          if (soc < 80.0 && pv < 200.0 && speed != "off" && speed != "low") {
+            ESP_LOGI("battery_pump", "Batterij < 80%% (%.0f%%) → pomp naar low", soc);
             id(pump_speed).make_call().set_option("low").perform();
             id(pump_low_by_battery) = true;
           }
-          // LADEN: SOC stijgt >= 3% → pomp terug naar med
-          else if (soc - id(prev_soc) >= 3.0 && id(pump_low_by_battery) && speed == "low") {
-            ESP_LOGI("battery_pump", "Batterij laadt (%.0f%% → %.0f%%) → pomp naar med",
-                     id(prev_soc), soc);
+          // HERSTEL: SOC > 85% (PV aan het laden) → pomp terug naar med
+          else if (soc > 85.0 && id(pump_low_by_battery) && speed == "low") {
+            ESP_LOGI("battery_pump", "Batterij hersteld (%.0f%%) → pomp naar med", soc);
             id(pump_speed).make_call().set_option("med").perform();
             id(pump_low_by_battery) = false;
           }
