@@ -1,0 +1,170 @@
+esphome:
+  name: proxy-ble-pool
+  friendly_name: proxy ble pool
+
+esp32:
+  board: esp32-poe
+  framework:
+    type: esp-idf
+
+# One-wire setup (Dallas)
+one_wire:
+  - platform: gpio
+    id: sensor_bus
+    pin: 2
+
+
+#ethernet:
+#  type: LAN8720
+#  mdc_pin: GPIO23
+#  mdio_pin: GPIO18
+# clk_mode: GPIO17_OUT
+#  phy_addr: 0
+#  power_pin: GPIO12
+
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "VNLeF6EbXRXn2w2vd+NNA1JmWKV/nUkH8SonXV96qFE="
+
+ota:
+  platform: esphome
+  password: "53bd7df4e47f644116f4f0113456b15c"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Proxy-Ble-Pool Fallback Hotspot"
+    password: !secret ap_password
+
+captive_portal:
+
+esp32_ble_tracker:
+  scan_parameters:
+    duration: 50sec
+    continuous : false
+    active: false
+
+bluetooth_proxy:
+  active: true
+  cache_services: true
+
+substitutions:
+  esphome_name: proxy-ble-pool
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+    on_time: 
+      - seconds: 0
+        minutes: '*'
+        then:
+          esp32_ble_tracker.start_scan:
+
+web_server:
+  port: 80
+  version: 3
+
+sensor:
+  - platform: uptime
+    name: "${esphome_name} Uptime Sensor"
+    
+  - platform: wifi_signal
+    name: "${esphome_name} WiFi Signal"
+    update_interval: 60s
+
+  # Dallas one-wire sensor
+  - platform: dallas_temp
+    name: "Temperature"
+    one_wire_id: sensor_bus
+    update_interval: 10s
+    id: pool_temp_sensor
+
+  # BLE proxy temperature from Home Assistant
+  - platform: homeassistant
+    name: "Izemst20 Temperature"
+    entity_id: sensor.izemst20_temperature
+    id: izemst_temp
+
+  - platform: template
+    name: "Izemst20 Temperature (HA)"
+    id: ble_pool_temp_template
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      return id(izemst_temp).state;
+      
+
+
+#  - platform: internal_temperature
+#    name: "${esphome_name} Internal Temperature"
+#    accuracy_decimals: 2
+#    update_interval: 30s
+
+button:
+  - platform: restart
+    name: ${esphome_name}-restart
+    id: restart_switch
+ 
+#output:
+#  - platform: ledc
+#    pin: GPIO5
+#    frequency: 19531Hz
+#    id: LED_channel_1
+
+#  - platform: ledc
+#    pin: GPIO4
+#    frequency: 19531Hz
+#    id: LED_channel_2
+
+#  - platform: ledc
+#    pin: GPIO1
+#    frequency: 19531Hz
+#    id: LED_channel_3
+
+#  - platform: ledc
+#    pin: GPIO0
+#    frequency: 19531Hz
+#    id: LED_channel_4
+
+#  - platform: ledc
+#    pin: GPIO3
+#    frequency: 19531Hz
+#    id: LED_channel_5
+
+
+#light:
+#  - platform: rgbww
+#    name: "${esphome_name}"
+#    default_transition_length: 1ms
+#    white: LED_channel_1
+#    warm_white: LED_channel_1
+#    cold_white: LED_channel_2
+#    blue: LED_channel_3
+#    green: LED_channel_4
+#    red: LED_channel_5
+
+# Example configuration entry for ESP32
+#i2c:
+#  sda: GPIO13
+#  scl: GPIO16
+#  scan: true
+#  id: bus_i2c
+
+#esp32_touch:
+#  setup_mode: true
+
+#binary_sensor:
+#  - platform: esp32_touch
+#    name: "ESP32 Touch Pad"
+#    pin: GPIO04
+#    threshold: 100
+

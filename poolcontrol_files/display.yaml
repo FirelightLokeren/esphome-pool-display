@@ -1,0 +1,48 @@
+esp32_ble_tracker:
+  scan_parameters:
+    continuous: true
+
+ble_client:
+  - mac_address: "0D:D0:1E:CD:2F:D2"
+    id: panel_ble
+    on_connect:
+      - lambda: ESP_LOGI("main", "BLE panel connected");
+    on_disconnect:
+      - lambda: ESP_LOGI("main", "BLE panel disconnected");
+
+external_components:
+  - source:
+      type: local
+      path: poolcontrol_files/components
+
+pool_display:
+  id: pool_display_panel
+  ble_client_id: panel_ble
+  brightness: 70
+
+binary_sensor:
+  - platform: template
+    name: "Panel Connected"
+    lambda: return id(pool_display_panel).is_connected();
+
+  - platform: template
+    name: "Display Rotated"
+    lambda: return id(pool_display_panel).is_rotated();
+
+button:
+  - platform: template
+    name: "Rotate 180°"
+    on_press:
+      - lambda: id(pool_display_panel).toggle_rotation();
+
+number:
+  - platform: template
+    name: "Display Brightness"
+    min_value: 0
+    max_value: 100
+    step: 5
+    initial_value: 70
+    optimistic: true
+    mode: slider
+    set_action:
+      - lambda: id(pool_display_panel).send_brightness((uint8_t)x);

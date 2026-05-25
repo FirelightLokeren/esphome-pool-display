@@ -1,0 +1,37 @@
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO34
+      mode:
+        input: true
+      inverted: true
+    device_class: moisture
+    name: "Water Sensor 1"
+    id: "water_sensor_1"
+  - platform: gpio
+    pin:
+      number: GPIO35
+      mode:
+        input: true
+      inverted: true
+    device_class: moisture
+    name: "Water Sensor 2"
+    id: "water_sensor_2"
+  - platform: gpio
+    pin:
+      number: GPIO36
+      mode:
+        input: true
+      inverted: true
+    device_class: moisture
+    name: "Water Sensor 3"
+    id: "water_sensor_3"
+  - platform: gpio
+    pin:
+      number: GPIO39
+      mode:
+        input: true
+      inverted: true
+    device_class: moisture
+    name: "Water Sensor 4"
+    id: "water_sensor_4"

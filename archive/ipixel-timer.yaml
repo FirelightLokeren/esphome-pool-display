@@ -1,0 +1,322 @@
+##############################################################################
+#  iPixel Timer – ESP32-S3 + ACT1026 32×32 BLE LED Matrix
+#  Versie zonder actieve Bluetooth (alles BLE is uitgecommentarieerd)
+##############################################################################
+
+substitutions:
+  device_name: ipixel-timer
+  friendly_name: iPixel Timer
+
+  # GATT UUIDs (uitgecommentarieerd omdat BLE uit staat)
+  # svc_uuid:    "0000ae00-0000-1000-8000-00805f9b34fb"
+  # write_uuid:  "0000ae01-0000-1000-8000-00805f9b34fb"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          ESP_LOGI("timer", "Boot complete - Bluetooth is disabled");
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [timer_renderer]
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${friendly_name} Fallback"
+    password: !secret fallback_password
+
+captive_portal:
+
+##############################################################################
+# Custom Renderer Component (blijft actief voor toekomstig gebruik)
+##############################################################################
+timer_renderer:
+  id: renderer
+
+##############################################################################
+# Globals
+##############################################################################
+globals:
+  - id: g_total_sec
+    type: int
+    restore_value: yes
+    initial_value: '300'
+
+  - id: g_remain_sec
+    type: int
+    restore_value: no
+    initial_value: '300'
+
+  - id: g_state          # 0=IDLE, 1=RUNNING, 2=PAUSED, 3=DONE
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: g_seq
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: g_brightness
+    type: int
+    restore_value: yes
+    initial_value: '60'
+
+  # Bluetooth gerelateerde globals uitgecommentarieerd
+  # - id: g_ble_ready
+  #   type: bool
+  #   restore_value: no
+  #   initial_value: 'false'
+
+  # - id: g_ble_connecting
+  #   type: bool
+  #   restore_value: no
+  #   initial_value: 'false'
+
+  # - id: g_panel_mac_int
+  #   type: uint64_t
+  #   restore_value: yes
+  #   initial_value: '0'
+
+##############################################################################
+# Panel MAC Address (uitgecommentarieerd)
+##############################################################################
+# text:
+#   - platform: template
+#     name: "Panel MAC Address"
+#     id: txt_panel_mac
+#     mode: text
+#     optimistic: true
+#     restore_value: false
+#     initial_value: ""
+#     icon: mdi:bluetooth
+#     on_value:
+#       then:
+#         - lambda: |-
+#             unsigned int b[6] = {0};
+#             if (sscanf(x.c_str(), "%02X:%02X:%02X:%02X:%02X:%02X",
+#                        &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) == 6) {
+#               id(g_panel_mac_int) = ((uint64_t)b[0] << 40) | ((uint64_t)b[1] << 32) |
+#                                     ((uint64_t)b[2] << 24) | ((uint64_t)b[3] << 16) |
+#                                     ((uint64_t)b[4] <<  8) |  (uint64_t)b[5];
+#               ESP_LOGI("timer", "Panel MAC set: %s", x.c_str());
+#             }
+
+##############################################################################
+# BLE Tracker + Client (volledig uitgecommentarieerd)
+##############################################################################
+# esp32_ble_tracker:
+#   scan_parameters:
+#     interval: 100ms
+#     window: 99ms
+#     active: true
+#
+#   on_ble_advertise:
+#     - lambda: |-
+#         ... (hele BLE scan code uitgecommentarieerd)
+
+# ble_client:
+#   - mac_address: "00:00:00:00:00:00"
+#     id: act1026
+#     auto_connect: false
+#
+#     on_connect:
+#       then:
+#         - lambda: |-
+#             ESP_LOGI("timer", "Panel connected");
+#             id(g_ble_ready) = true;
+#         - ble_client.ble_write: ...
+#
+#     on_disconnect:
+#       then:
+#         - lambda: |-
+#             ESP_LOGI("timer", "Panel disconnected");
+#             id(g_ble_ready) = false;
+
+##############################################################################
+# 1-second interval – alleen countdown, GEEN BLE frame versturen
+##############################################################################
+interval:
+  - interval: 1s
+    then:
+      # Countdown logic (blijft werken)
+      - lambda: |-
+          if (id(g_state) == 1) {  // RUNNING
+            if (id(g_remain_sec) > 0) {
+              id(g_remain_sec)--;
+            }
+            if (id(g_remain_sec) == 0) {
+              id(g_state) = 3;  // DONE
+            }
+          }
+
+      # BLE frame versturen uitgecommentarieerd
+      # - if:
+      #     condition:
+      #       lambda: 'return id(g_ble_ready);'
+      #     then:
+      #       - ble_client.ble_write: ... (alles BLE uit)
+
+##############################################################################
+# Home Assistant Entities
+##############################################################################
+sensor:
+  - platform: template
+    name: "Timer Remaining"
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: 'return (float)id(g_remain_sec);'
+    icon: mdi:timer-outline
+
+text_sensor:
+  - platform: template
+    name: "Timer State"
+    update_interval: 1s
+    lambda: |-
+      switch (id(g_state)) {
+        case 0: return "IDLE";
+        case 1: return "RUNNING";
+        case 2: return "PAUSED";
+        case 3: return "DONE";
+        default: return "UNKNOWN";
+      }
+    icon: mdi:timer
+
+  # Panel Connected sensor uitgecommentarieerd
+  # - platform: template
+  #   name: "Panel Connected"
+  #   update_interval: 5s
+  #   lambda: 'return id(g_ble_ready) ? "Yes" : "No";'
+  #   icon: mdi:bluetooth-connect
+
+number:
+  - platform: template
+    name: "Timer Minutes"
+    min_value: 1
+    max_value: 99
+    step: 1
+    initial_value: 5
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "min"
+    icon: mdi:timer-sand
+    set_action:
+      - lambda: |-
+          id(g_total_sec) = (int)(x * 60);
+          id(g_remain_sec) = id(g_total_sec);
+          id(g_state) = 0;
+
+  # Brightness via HA uitgecommentarieerd (kan later weer aan als BLE terugkomt)
+  # - platform: template
+  #   name: "Panel Brightness"
+  #   ...
+
+button:
+  - platform: template
+    name: "Timer Start / Pause / Reset"
+    icon: mdi:play-pause
+    on_press:
+      - lambda: |-
+          switch (id(g_state)) {
+            case 0:
+              if (id(g_remain_sec) > 0) id(g_state) = 1;
+              break;
+            case 1: id(g_state) = 2; break;
+            case 2: id(g_state) = 1; break;
+            case 3:
+              id(g_remain_sec) = id(g_total_sec);
+              id(g_state) = 0;
+              break;
+          }
+
+  - platform: template
+    name: "Timer Reset"
+    icon: mdi:timer-refresh
+    on_press:
+      - lambda: |-
+          id(g_remain_sec) = id(g_total_sec);
+          id(g_state) = 0;
+
+##############################################################################
+# Physical Buttons (blijven werken)
+##############################################################################
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Btn Set Plus"
+    internal: true
+    filters: [delayed_on: 50ms]
+    on_press:
+      - lambda: |-
+          if (id(g_state) != 1) {
+            id(g_total_sec) = std::min(id(g_total_sec) + 60, 99*60);
+            id(g_remain_sec) = id(g_total_sec);
+            id(g_state) = 0;
+          }
+
+  - platform: gpio
+    pin:
+      number: GPIO1
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Btn Set Minus"
+    internal: true
+    filters: [delayed_on: 50ms]
+    on_press:
+      - lambda: |-
+          if (id(g_state) != 1 && id(g_total_sec) >= 60) {
+            id(g_total_sec) -= 60;
+            id(g_remain_sec) = id(g_total_sec);
+            id(g_state) = 0;
+          }
+
+  - platform: gpio
+    pin:
+      number: GPIO2
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Btn Start/Pause"
+    internal: true
+    filters: [delayed_on: 50ms]
+    on_press:
+      - lambda: |-
+          switch (id(g_state)) {
+            case 0:
+              if (id(g_remain_sec) > 0) id(g_state) = 1;
+              break;
+            case 1: id(g_state) = 2; break;
+            case 2: id(g_state) = 1; break;
+            case 3:
+              id(g_remain_sec) = id(g_total_sec);
+              id(g_state) = 0;
+              break;
+          }

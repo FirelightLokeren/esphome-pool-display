@@ -1,0 +1,41 @@
+esphome:
+  name: proxy-ble-test
+  friendly_name: proxy ble test
+
+esp32:
+  board: esp32-poe
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "+wwXRid68bj4jFmiigzEW6v441ef6gejzhZoz42ffcA="
+
+ota:
+  - platform: esphome
+    password: "0397d93fa19578a194c1bf1086748f0b"
+
+ethernet:
+  type: LAN8720
+  mdc_pin: GPIO23
+  mdio_pin: GPIO18
+  clk_mode: GPIO17_OUT
+  phy_addr: 0
+  power_pin: GPIO12
+
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 1100ms
+    window: 1100ms
+    active: true
+
+bluetooth_proxy:
+  active: true
+
+#text_sensor:
+#  - platform: ble_scanner
+#    name: "BLE Devices Scanner"

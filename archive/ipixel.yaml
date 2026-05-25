@@ -1,0 +1,309 @@
+##############################################################################
+#  Time Timer – ESP32-S3 + ACT1026 BLE LED Matrix (32×32)
+#  ESPHome 2024.6+ compatible (no custom_component)
+#
+#  Folder structure:
+#    ipixel.yaml                               ← this file
+#    components/
+#      timer_renderer/
+#        __init__.py                           ← empty
+#        component.py                          ← ESPHome registration
+#        timer_renderer.h                      ← C++ renderer
+#
+#  1. Set panel_mac to your LED_BLE_xxxx MAC address
+#  2. esphome run ipixel.yaml
+##############################################################################
+
+substitutions:
+  device_name:   ipixel-ble
+  friendly_name: iPixel ble
+  panel_mac:     "55:3D:EC:D7:10:0E"   # ← YOUR panel MAC
+
+  # GATT UUIDs – verify with nRF Connect or the Arduino sniffer sketch
+  svc_uuid:    "0000ae00-0000-1000-8000-00805f9b34fb"
+  write_uuid:  "0000ae01-0000-1000-8000-00805f9b34fb"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+
+# Pull the component from the local 'components/' subfolder
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [timer_renderer]
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${friendly_name} Fallback"
+    password: !secret fallback_password
+
+captive_portal:
+
+##############################################################################
+# Instantiate the renderer component
+##############################################################################
+timer_renderer:
+  id: renderer
+
+##############################################################################
+# Global state  (0=IDLE 1=RUNNING 2=PAUSED 3=DONE)
+##############################################################################
+globals:
+  - id: g_total_sec
+    type: int
+    restore_value: yes
+    initial_value: '300'
+  - id: g_remain_sec
+    type: int
+    restore_value: no
+    initial_value: '300'
+  - id: g_state
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: g_seq
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: g_brightness
+    type: int
+    restore_value: yes
+    initial_value: '60'
+  - id: g_ble_ready
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+##############################################################################
+# BLE
+##############################################################################
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 100ms
+    window:   99ms
+    active:   true
+
+ble_client:
+  - mac_address: ${panel_mac}
+    id: act1026
+    auto_connect: true
+
+    on_connect:
+      then:
+        - lambda: |-
+            ESP_LOGI("timer", "Panel connected");
+            id(g_ble_ready) = true;
+        - ble_client.ble_write:
+            id: act1026
+            service_uuid: ${svc_uuid}
+            characteristic_uuid: ${write_uuid}
+            value: !lambda |-
+              return id(renderer)->get_brightness_cmd((uint8_t) id(g_brightness));
+
+    on_disconnect:
+      then:
+        - lambda: |-
+            ESP_LOGI("timer", "Panel disconnected");
+            id(g_ble_ready) = false;
+
+##############################################################################
+# 1-second loop: tick + push frame
+##############################################################################
+interval:
+  - interval: 1s
+    then:
+      # Countdown tick
+      - lambda: |-
+          if (id(g_state) == 1) {
+            if (id(g_remain_sec) > 0) id(g_remain_sec)--;
+            if (id(g_remain_sec) == 0) id(g_state) = 3;
+          }
+      # Push BLE frame
+      - if:
+          condition:
+            lambda: 'return id(g_ble_ready);'
+          then:
+            - ble_client.ble_write:
+                id: act1026
+                service_uuid: ${svc_uuid}
+                characteristic_uuid: ${write_uuid}
+                value: !lambda |-
+                  return id(renderer)->get_header((uint8_t)(id(g_seq)++ & 0xFF));
+            - delay: 20ms
+            - ble_client.ble_write:
+                id: act1026
+                service_uuid: ${svc_uuid}
+                characteristic_uuid: ${write_uuid}
+                value: !lambda |-
+                  return id(renderer)->get_chunk(0, id(g_remain_sec), id(g_total_sec), id(g_state));
+            - delay: 30ms
+            - ble_client.ble_write:
+                id: act1026
+                service_uuid: ${svc_uuid}
+                characteristic_uuid: ${write_uuid}
+                value: !lambda |-
+                  return id(renderer)->get_chunk(1, id(g_remain_sec), id(g_total_sec), id(g_state));
+            - delay: 30ms
+            - ble_client.ble_write:
+                id: act1026
+                service_uuid: ${svc_uuid}
+                characteristic_uuid: ${write_uuid}
+                value: !lambda |-
+                  return id(renderer)->get_chunk(2, id(g_remain_sec), id(g_total_sec), id(g_state));
+
+##############################################################################
+# Home Assistant entities
+##############################################################################
+sensor:
+  - platform: template
+    name: "Timer Remaining"
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: 'return (float) id(g_remain_sec);'
+    icon: mdi:timer-outline
+
+text_sensor:
+  - platform: template
+    name: "Timer State"
+    update_interval: 1s
+    lambda: |-
+      switch (id(g_state)) {
+        case 0: return {"IDLE"};
+        case 1: return {"RUNNING"};
+        case 2: return {"PAUSED"};
+        case 3: return {"DONE"};
+        default: return {"UNKNOWN"};
+      }
+    icon: mdi:timer
+
+  - platform: template
+    name: "Panel Connected"
+    update_interval: 5s
+    lambda: 'return id(g_ble_ready) ? std::string("Yes") : std::string("No");'
+    icon: mdi:bluetooth-connect
+
+number:
+  - platform: template
+    name: "Timer Minutes"
+    min_value: 1
+    max_value: 99
+    step: 1
+    initial_value: 5
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: min
+    icon: mdi:timer-sand
+    set_action:
+      - lambda: |-
+          id(g_total_sec)  = (int)(x * 60);
+          id(g_remain_sec) = id(g_total_sec);
+          id(g_state)      = 0;
+
+  - platform: template
+    name: "Panel Brightness"
+    min_value: 0
+    max_value: 100
+    step: 5
+    initial_value: 60
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "%"
+    icon: mdi:brightness-6
+    set_action:
+      - lambda: 'id(g_brightness) = (int)x;'
+      - if:
+          condition:
+            lambda: 'return id(g_ble_ready);'
+          then:
+            - ble_client.ble_write:
+                id: act1026
+                service_uuid: ${svc_uuid}
+                characteristic_uuid: ${write_uuid}
+                value: !lambda |-
+                  return {0xAE, 0x05, (uint8_t) id(g_brightness)};
+
+button:
+  - platform: template
+    name: "Timer Start Stop"
+    icon: mdi:play-pause
+    on_press:
+      - lambda: |-
+          switch (id(g_state)) {
+            case 0: if (id(g_remain_sec) > 0) id(g_state) = 1; break;
+            case 1: id(g_state) = 2; break;
+            case 2: id(g_state) = 1; break;
+            case 3: id(g_remain_sec) = id(g_total_sec); id(g_state) = 0; break;
+          }
+
+  - platform: template
+    name: "Timer Reset"
+    icon: mdi:timer-refresh
+    on_press:
+      - lambda: |-
+          id(g_remain_sec) = id(g_total_sec);
+          id(g_state) = 0;
+
+##############################################################################
+# Physical buttons
+##############################################################################
+binary_sensor:
+  - platform: gpio
+    pin: { number: GPIO4, mode: INPUT_PULLUP, inverted: true }
+    name: "Btn Set Plus"
+    internal: true
+    filters: [delayed_on: 50ms]
+    on_press:
+      - lambda: |-
+          if (id(g_state) != 1) {
+            id(g_total_sec)  = std::min(id(g_total_sec) + 60, 99*60);
+            id(g_remain_sec) = id(g_total_sec);
+            id(g_state) = 0;
+          }
+
+  - platform: gpio
+    pin: { number: GPIO1, mode: INPUT_PULLUP, inverted: true }
+    name: "Btn Set Minus"
+    internal: true
+    filters: [delayed_on: 50ms]
+    on_press:
+      - lambda: |-
+          if (id(g_state) != 1 && id(g_total_sec) >= 60) {
+            id(g_total_sec)  -= 60;
+            id(g_remain_sec)  = id(g_total_sec);
+            id(g_state) = 0;
+          }
+
+  - platform: gpio
+    pin: { number: GPIO2, mode: INPUT_PULLUP, inverted: true }
+    name: "Btn Start"
+    internal: true
+    filters: [delayed_on: 50ms]
+    on_press:
+      - lambda: |-
+          switch (id(g_state)) {
+            case 0: if (id(g_remain_sec) > 0) id(g_state) = 1; break;
+            case 1: id(g_state) = 2; break;
+            case 2: id(g_state) = 1; break;
+            case 3: id(g_remain_sec) = id(g_total_sec); id(g_state) = 0; break;
+          }

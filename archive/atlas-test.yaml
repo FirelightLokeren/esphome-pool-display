@@ -1,0 +1,97 @@
+substitutions:
+  name: "poolcontrol-esp32"
+  friendly_name: "Pool Control ESP32"
+  app_version: "1.0.3"
+  internal_temp_address: "0x00"
+  external_temp_address: "0x00"
+  hide_ph_module: "false"
+  hide_ec_module: "true"
+  hide_do_module: "true"
+  hide_orp_module: "false"
+
+packages:
+  core: !include atlas_files/core.yaml
+#  alarms: !include atlas_files/alarms.yaml
+#  ds18b20: !include atlas_files/ds18b20.yaml
+#  ezo_ph: !include atlas_files/ezo_ph.yaml
+#  ezo_ec: !include atlas_files/ezo_ec.yaml
+#  ezo_do: !include atlas_files/ezo_do.yaml
+#  heating: !include atlas_files/heating.yaml
+#  lights: !include atlas_files/lights.yaml
+#  time_scheduler: !include atlas_files/time_scheduler.yaml
+#  ultrasonic_distance: !include atlas_files/ultrasonic_distance.yaml
+
+esphome:
+  min_version: 2024.6.0
+  name: "${name}"
+  friendly_name: "${friendly_name}"
+  name_add_mac_suffix: true
+  comment: "ESP32 based - Pool Controller for Home Assistant"
+  project:
+    name: "sebsz.aquaha"
+    version: "${app_version}"
+
+
+esp32:
+  board: esp32-poe
+  framework:
+    type: arduino
+
+# Enable logging
+logger: 
+  level: "DEBUG"
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "8QxIXjS715cOJHkRjUg1e6gL3hJO7EKWYTv7800hIGA="
+
+ota:
+  - platform: esphome
+    password: "92e0fc1d5308ad51cee0985abcc99dcb"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Atlas-Test Fallback Hotspot"
+    password: "JnvMPDcZmpWd"
+
+captive_portal:
+
+
+sensor:
+  - platform: ezo
+    id: ph_ezo
+    name: "pH"
+    address: 99
+    accuracy_decimals: 2
+    unit_of_measurement: "pH"
+    state_class: "measurement"
+    update_interval: 15s
+  - platform: ezo
+    id: orp_ezo
+    name: "ORP"
+    address: 98
+    accuracy_decimals: 1
+    unit_of_measurement: "mV"
+    state_class: "measurement"
+    update_interval: 15s
+  - platform: ezo
+    id: rtd_ezo_roof
+    name: "Roof temp"
+    address: 102
+    accuracy_decimals: 1
+    unit_of_measurement: "°C"
+    state_class: "measurement"
+    update_interval: 15s
+  - platform: ezo
+    id: rtd_ezo_pool
+    name: "pool temp"
+    address: 103
+    accuracy_decimals: 1
+    unit_of_measurement: "°C"
+    state_class: "measurement"
+    update_interval: 15s
