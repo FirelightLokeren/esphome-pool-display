@@ -8,3 +8,6 @@ secrets.yaml
 !poolcontrol.yaml
 !poolcontrol_files/
 !poolcontrol_files/**
+poolcontrol_files/.esphome/
+poolcontrol_files/**/__pycache__/
+poolcontrol_files/**/*.pyc
