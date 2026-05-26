@@ -2,3 +2,9 @@
 **/__pycache__/
 *.pyc
 secrets.yaml
+# Alles negeren behalve poolcontrol bestanden
+*
+!.gitignore
+!poolcontrol.yaml
+!poolcontrol_files/
+!poolcontrol_files/**

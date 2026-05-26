@@ -1,0 +1,335 @@
+external_components:
+  - source: github://kecajtop/dtr0xx_io@master
+    refresh: 60s
+    components:
+      - dtr0xx_io
+
+dtr0xx_io:
+  - id: dtr0xx_io_hub
+    dingtian_clk_pin: 14
+    dingtian_q7_pin: 16
+    dingtian_sdi_pin: 13
+    dingtian_pl_pin: 32
+    dingtian_rck_pin: 15
+
+binary_sensor:
+  - platform: gpio                          # INPUT 1  valve on roof
+    id: input_roof
+    name: Roof
+    icon: "mdi:home-roof"
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 7
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: $debounce_time
+      - delayed_off: $debounce_time
+    internal: true
+
+  - platform: gpio                          # INPUT 2 valve on pool
+    name: Pool
+    id: input_pool
+    icon: "mdi:pool"
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 6
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: $debounce_time
+      - delayed_off: $debounce_time
+    internal: true
+
+  - platform: gpio                          # INPUT 3  water level high
+    name: water level high
+    id: input_water_level_high
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 5
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: $debounce_time
+      - delayed_off: $debounce_time
+    internal: false
+    web_server:
+      sorting_weight: 60
+
+  - platform: gpio                          # INPUT 4   water level normal
+    name: water level normal
+    id: input_water_level_normal
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 4
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: $debounce_time
+      - delayed_off: $debounce_time
+    internal: false
+    web_server:
+      sorting_weight: 61
+
+  - platform: gpio                          # INPUT 5 water level low
+    name: water level low
+    id: input_water_level_low
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 3
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: $debounce_time
+      - delayed_off: $debounce_time
+    internal: false
+    web_server:
+      sorting_weight: 62
+
+  - platform: gpio                          # INPUT 6  ACK 6 WAY
+    name: Ack 6Way
+    id: input_6
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 2
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: $debounce_time
+      - delayed_off: $debounce_time
+    internal: false
+
+  - platform: gpio                          # INPUT 7 ACK SKIMMER
+    name: Ack skimmer
+    id: input_7
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 1
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: $debounce_time
+      - delayed_off: $debounce_time
+    internal: false
+
+  - platform: gpio                          # INPUT 8 not used
+    name: ${friendly_name} Input 8
+    id: input_8
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 0
+      inverted: true
+      allow_other_uses: true
+    filters:
+      - delayed_on: $debounce_time
+      - delayed_off: $debounce_time
+    internal: true
+
+  - platform: template                      # SWITCH BYPASS RELAY delta temp
+    id: delta_temp_trigger
+    name: "Delta Temp Trigger"
+    lambda: |-
+      if (id(delta_temp).state > 5.0) {
+        return true;
+      } else if (id(delta_temp).state < 1.0) {
+        return false;
+      } else {
+        return id(delta_temp_trigger).state;
+      }
+    on_press:
+      - switch.turn_on: relay_bypass
+    on_release:
+      - switch.turn_off: relay_bypass
+    internal: true
+
+
+switch:
+  - platform: gpio                          # RELAY 1   not used
+    name: ${friendly_name} Relay 1
+    id: relay_1
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 7
+      inverted: false
+      allow_other_uses: true
+    internal: true
+
+  - platform: gpio                          # RELAY 2   pump speed off
+    name: Pump off
+    id: relay_pump_off
+    restore_mode: RESTORE_DEFAULT_OFF
+    interlock: [relay_pump_low, relay_pump_med, relay_pump_high]
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 6
+      inverted: true
+      allow_other_uses: true
+    internal: true
+
+  - platform: gpio                          # RELAY 3  pump speed low
+    name: Pump low
+    id: relay_pump_low
+    restore_mode: RESTORE_DEFAULT_OFF
+    interlock: [relay_pump_off, relay_pump_med, relay_pump_high]
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 5
+      inverted: false
+      allow_other_uses: true
+    internal: true
+
+  - platform: gpio                          # RELAY 4 pump speed med
+    name: Pump med
+    id: relay_pump_med
+    restore_mode: RESTORE_DEFAULT_OFF
+    interlock: [relay_pump_off, relay_pump_low, relay_pump_high]
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 4
+      inverted: false
+      allow_other_uses: true
+    internal: true
+
+  - platform: gpio                          # RELAY 5 pump speed high
+    name: Pump high
+    id: relay_pump_high
+    restore_mode: RESTORE_DEFAULT_OFF
+    interlock: [relay_pump_off, relay_pump_low, relay_pump_med]
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 3
+      inverted: false
+      allow_other_uses: true
+    internal: true
+
+  - platform: gpio                          # RELAY 6  not used
+    name: ${friendly_name} Relay 6
+    id: relay_6
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 2
+      inverted: false
+      allow_other_uses: true
+    internal: true
+
+  - platform: gpio                          # RELAY 7 valve control roof/pool
+    name: Bypass dak
+    id: relay_bypass
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 1
+      inverted: false
+      allow_other_uses: true
+    internal: true
+
+  - platform: gpio                          # RELAY 8 not used
+    name: ${friendly_name} Relay 8
+    id: relay_8
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      dtr0xx_io: dtr0xx_io_hub
+      number: 0
+      inverted: false
+      allow_other_uses: true
+    internal: true
+
+text_sensor:
+  - platform: template                      # DISPLAY STATUS 3-WEG KLEP
+    name: "3-Way Valve Mode"
+    id: valve_mode
+    lambda: |-
+      if (id(input_roof).state) {
+        return std::string("Roof");
+      } else if (id(input_pool).state) {
+        return std::string("Pool");
+      } else {
+        return std::string("Moving");
+      }
+    icon: mdi:valve
+    web_server:
+      sorting_weight: 50
+
+select:
+  - platform: template                      # SET PUMP SPEED
+    id: pump_speed
+    name: "Pump speed"
+    optimistic: true
+    options:
+      - "off"
+      - "low"
+      - "med"
+      - "high"
+    initial_option: low
+    icon: mdi:pump
+    set_action:
+      - lambda: |-
+          id(relay_pump_off).turn_off();
+          id(relay_pump_low).turn_off();
+          id(relay_pump_med).turn_off();
+          id(relay_pump_high).turn_off();
+
+          if (x == "off") {
+            id(relay_pump_off).turn_on();
+          } else if (x == "low") {
+            id(relay_pump_low).turn_on();
+          } else if (x == "med") {
+            id(relay_pump_med).turn_on();
+          } else if (x == "high") {
+            id(relay_pump_high).turn_on();
+          }
+    web_server:
+      sorting_weight: 70
+
+interval:
+  - interval: 2s
+    then:
+      - lambda: |-
+          if (id(pump_mode).current_option() != "auto") {
+            return;
+          }
+
+          auto delta    = id(delta_temp).state;
+          auto env_temp = id(ble_pool_temp_template).state;
+          auto speed    = id(pump_speed).current_option();
+
+          // SET TO LOW SPEED IF DELTA > 10 AND CURRENTLY OFF
+          if (delta > 10.0 && speed == "off") {
+            id(relay_pump_off).turn_off();
+            id(relay_pump_med).turn_off();
+            id(relay_pump_high).turn_off();
+            id(relay_pump_low).turn_on();
+          }
+          // SET TO LOW SPEED IF TEMP < 10 AND CURRENTLY MED OR HIGH
+          else if (env_temp < 10.0 && (speed == "med" || speed == "high")) {
+            id(relay_pump_off).turn_off();
+            id(relay_pump_med).turn_off();
+            id(relay_pump_high).turn_off();
+            id(relay_pump_low).turn_on();
+          }
+          // SET TO MED SPEED IF TEMP > 15 AND CURRENTLY OFF OR LOW
+          else if (env_temp > 15.0 && (speed == "off" || speed == "low")) {
+            id(relay_pump_off).turn_off();
+            id(relay_pump_low).turn_off();
+            id(relay_pump_high).turn_off();
+            id(relay_pump_med).turn_on();
+          }
+
+      - lambda: |-
+          // UPDATE DASHBOARD MET HUIDIGE SNELHEID
+          std::string current_speed;
+          if (id(relay_pump_off).state) {
+            current_speed = "off";
+          } else if (id(relay_pump_low).state) {
+            current_speed = "low";
+          } else if (id(relay_pump_med).state) {
+            current_speed = "med";
+          } else if (id(relay_pump_high).state) {
+            current_speed = "high";
+          }
+          if (current_speed != id(last_pump_speed)) {
+            id(last_pump_speed) = current_speed;
+            id(pump_speed).publish_state(current_speed);
+          }
